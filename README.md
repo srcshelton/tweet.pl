@@ -20,22 +20,38 @@ with the Twitter API - these can be obtained by creating a new App at
 https://dev.twitter.com from a Signed-In twitter account.  The permissions of
 this custom App should then be updated to take it out of Read-Only mode.
 
-`save_tokens` and `restore_tokens` are currently stubs, either in need of
-implementation or for the requisite tokens values hard-coded. Currently, when
-you first run the script you'll be prompted to visit a Twitter URL and then
-input the provided PIN, which will output an Access Token and Access Token
-Secret pair, which should then the hard-coded into the current implmentation of
-the `save_tokens` function.
+A configuration file is looked for in `/etc/tweet.pl.conf`, `~/.tweet.pl.conf`,
+or `tweet.pl.conf` in the same directory as `tweet.pl` itself.  If none of
+these can be read, then a default `~/.tweet.pl.conf` will be created.
 
-The (optional )default DM `$account` as well as your account's `$comsumer_key`
-and `$consumer_key_secret` do currently need to be hard-coded at the top of the
-file, although in the future these values should (also) be read from an
-external configuration file.
+This file will resemble the following:
+
+```
+[default]
+dm_account = <blank or a specified account>
+
+[keys]
+consumer_key_secret = <secret from dev.twitter.com>
+consumer_key = <key from dev.twitter.com>
+
+[tokens]
+access_token = <blank>
+access_token_secret = <blank>
+```
+
+When you first run the script you'll be prompted to visit a Twitter URL and
+then input the provided PIN, which will populate and save an Access Token and
+Access Token Secret pair to your configuration file.
 
 This script doesn't currently use Getopt::Long (which it should), and so
 arguments must be specified exactly as per the usage string above.  If a space
 is substituted for a '=' character, then the result will not be what you might
 expect!
+
+The perl module `Config::Simple` is now a pre-requisite to run `tweet.pl` -
+please checkout commit [976fe3c](https://github.com/srcshelton/tweet.pl/tree/976fe3c1e864ecd359552bfad74ca90c91d20633)
+for the older release, which requires that values be hard-coded but which
+doesn't use any non-core modules.
 
 Patches welcomed ;)
 
