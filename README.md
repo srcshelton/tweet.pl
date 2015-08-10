@@ -43,10 +43,10 @@ When you first run the script you'll be prompted to visit a Twitter URL and
 then input the provided PIN, which will populate and save an Access Token and
 Access Token Secret pair to your configuration file.
 
-This script doesn't currently use Getopt::Long (which it should), and so
-arguments must be specified exactly as per the usage string above.  If a space
-is substituted for a '=' character, then the result will not be what you might
-expect!
+If the environment variable `DEBUG` is set then more verbose messages will be
+output, and if `notweet` is set then `tweet.pl` will perform all processing
+(including connecting to the Twitter API), except for actually sending the
+specified tweet.
 
 The perl module `Config::Simple` is now a pre-requisite to run `tweet.pl` -
 please checkout commit [976fe3c](https://github.com/srcshelton/tweet.pl/tree/976fe3c1e864ecd359552bfad74ca90c91d20633)

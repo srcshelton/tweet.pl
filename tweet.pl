@@ -1,7 +1,7 @@
 #!/bin/sh
-exec perl -wx $0 "$@"
+exec perl -wTx $0 "$@"
 	if 0;
-#!perl -w
+#!perl -wT
 #line 6
 
 package tweet;
@@ -18,9 +18,12 @@ use Net::OAuth;
 
 use Data::Dumper;
 
+use constant DEBUG => defined( $ENV{ 'DEBUG' } and length( $ENV{ 'DEBUG' } ) );
+use constant SIMULATE => defined( $ENV{ 'notweet' } and length( $ENV{ 'notweet' } ) );
+
 sub handle_errors( $ );
 sub write_initial_config( $;$ );
-sub restore_tokens( ;$ );
+sub restore_tokens( ;$$ );
 sub save_tokens( $$;$ );
 sub main();
 
@@ -45,9 +48,9 @@ sub handle_errors( $ ) {
 			return( $code );
 		}
 		
-		die( "$0: FATAL: $message\n" );
+		die( "$name: FATAL: $message\n" );
 	} else {
-		die(  "$0: FATAL: Undefined error\n" );
+		die(  "$name: FATAL: Undefined error\n" );
 	}
 } # handle_errors
 
@@ -57,22 +60,39 @@ sub write_initial_config( $;$ ) {
 	return( undef ) unless( defined( $conf ) and length( $conf ) );
 	return( undef ) if( defined( $values ) and ( ref( $values ) ne 'HASH' ) );
 
-	warn "$0: INFO: Writing new configuration file '$conf' ...\n";
+	warn "$name: INFO:  Writing new configuration file '$conf' ...\n";
 
-	my $cs = new Config::Simple( syntax => 'ini' ) or die( "$0: FATAL: Config::Simple() failed: $! ($@)\n" );
+	my $cs = new Config::Simple( syntax => 'ini' ) or die( "$name: FATAL: Config::Simple() failed: $! ($@)\n" );
 
 	$cs -> param( 'default.dm_account', ( defined $values -> { 'dm_account' } ? $values -> { 'dm_account' } : '<insert account name to DM by default here>' ) );
 	$cs -> param( 'keys.consumer_key', ( defined $values -> { 'consumer_key' } ? $values -> { 'consumer_key' } : '<insert Consumer Key value here>' ) );
 	$cs -> param( 'keys.consumer_key_secret', ( defined $values -> { 'consumer_key_secret' } ? $values -> { 'consumer_key_secret' } : '<insert Consumer Key Secret value here>' ) );
 	$cs -> param( 'tokens.access_token', ( defined $values -> { 'access_token' } ? $values -> { 'access_token' } : '<generated Access Token will be inserted here>' ) );
 	$cs -> param( 'tokens.access_token_secret', ( defined $values -> { 'access_token_secret' } ? $values -> { 'access_token_secret' } : '<generated Access Token Secret will be inserted here>' ) );
-	$cs -> write( $conf ) or die( "$0: FATAL: Config::Simple::write( '$conf' ) failed: $! ($@)\n" );
+
+	# Apparently, $conf is considered tainted...
+	$conf =~ /^(.*)$/; $conf = $1;
+
+	if( not( DEBUG ) ) {
+		$cs -> write( $conf ) or die(
+			"$name: FATAL: Config::Simple::write( '$conf' )" .
+				" failed: $! ($@)\n"
+		);
+	}
+
+	warn "An initial configuration file has been written to '$conf'.\n";
+	warn "Please now edit this file and and insert your Twitter" .
+		" Consumer Key and Access Secret.\n";
+	warn "Once these values are populated, please re-run $name to send" .
+		" messages.\n";
+
+	exit( 1 ) unless DEBUG;
 
 	$cs = undef;
 } # write_initial_config
 
-sub restore_tokens( ;$ ) {
-	my( $cs ) = @_;
+sub restore_tokens( ;$$ ) {
+	my( $cs, $conf ) = @_;
 
 	my( $at, $ats );
 
@@ -81,6 +101,20 @@ sub restore_tokens( ;$ ) {
 	if( defined( $cs ) ) {
 		$at = $cs -> param( 'tokens.access_token' );
 		$ats = $cs -> param( 'tokens.access_token_secret' );
+
+		if( $at =~ m/^<.*>$/ or $ats =~ m/^<.*>$/ ) {
+			warn "$name: FATAL: Read invalid Access Token or" .
+				" Access Token Secret\n";
+			if( defined( $conf ) and length( $conf ) ) {
+				die "$name: FATAL: Please check '$conf' and" .
+					" enter your account-specific" .
+					" values\n";
+			} else {
+				die "$name: FATAL: Please check your" .
+					" configuration file and enter your" .
+					" account-specific values\n";
+			}
+		}
 	}
 	if( not( defined( $at ) and defined( $ats) ) ) {
 		$at = '<insert fall-back Access Token value here>';
@@ -100,19 +134,19 @@ sub save_tokens( $$;$ ) {
 		$cs -> param( 'tokens.access_token_secret', $ats );
 		$cs -> write();
 
-		return 1;
+		return( 1 );
 	} else {
 		print "Access token: '$at', Access token secret '$ats'\n";
-		print "Please now edit the 'restore_tokens' function in '$0' with" .
+		print "Please now edit the 'restore_tokens' function in '$name' with" .
 			"these values\n";
 
-		return 0;
+		return( 0 );
 	}
 } # save_tokens
 
 sub main() {
 	if( 0 == scalar( @ARGV ) or grep( /\b(-h|--help)\b/, @ARGV ) ) {
-		print( "$0 [--to=<DM recipient>] [--host=<host>] [--type=<direct|update>] [--eventtype=<event>] [message]\n" );
+		print( "$name [--to=<DM recipient>] [--host=<host>] [--type=<direct|update>] [--eventtype=<event>] [message]\n" );
 		exit( 0 );
 	}
 
@@ -134,12 +168,24 @@ sub main() {
 		write_initial_config( $conf );
 	}
 
-	print( "$0: INFO: Using configuration file '$conf' ...\n" );
+	print( "$name: INFO:  Using configuration file '$conf' ...\n" );
 
 	my $cs = new Config::Simple( $conf );
 	my $account = $cs -> param( 'default.dm_account' );
 	my $consumer_key = $cs -> param( 'keys.consumer_key' );
 	my $consumer_key_secret = $cs -> param( 'keys.consumer_key_secret' );
+
+	if( $consumer_key =~ m/^<.*>$/ or $consumer_key_secret =~ m/^<.*>$/ ) {
+		warn "$name: FATAL: Read invalid Consumer Key or Consumer" .
+			" Key Secret\n";
+		if( defined( $conf ) and length( $conf ) ) {
+			die "$name: FATAL: Please check '$conf' and enter" .
+				" your account-specific values\n";
+		} else {
+			die "$name: FATAL: Please check your configuration" .
+				" file and enter your account-specific values\n";
+		}
+	}
 
 	my $twitter = Net::Twitter::Lite::WithAPIv1_1 -> new(
 		  consumer_key     => $consumer_key
@@ -151,7 +197,7 @@ sub main() {
 	while( not( $twitter -> authorized ) ) {
 		# Access Token and Access Token Secret should be stored in a cookie,
 		# config file or session database...
-		( $access_token, $access_token_secret ) = restore_tokens( $cs );
+		( $access_token, $access_token_secret ) = restore_tokens( $cs, $conf );
 		if( $access_token and $access_token_secret ) {
 			$twitter -> access_token( $access_token );
 			$twitter -> access_token_secret( $access_token_secret );
@@ -181,50 +227,93 @@ sub main() {
 	my $origin = "unknown";
 	my $message = "";
 	my $haseventtype = undef;
+	my $nextarg = undef;
+
+	warn "$name: DEBUG: Processing " . scalar( @ARGV ) . " arguments ...\n" if DEBUG;
+
 	foreach my $argument ( @ARGV ) {
-		if( $argument =~ m/^--to=/ ) {
-			$account = $argument;
-			$account =~ s/^.*--to=//;
-		} elsif( $argument =~ m/^--host=/ ) {
-			$origin = $argument;
-			$origin =~ s/^.*--host=//;
-		} elsif( $argument =~ m/^--type=/ ) {
-			$type = $argument;
-			$type =~ s/^.*--type=//;
-			if( not( ( $type eq 'direct' ) or ( $type eq 'update' ) ) ) {
-				die( "$0: FATAL: Invalid post type '$type' - supported values are 'direct' and 'update'\n" );
+		if( $nextarg and length( $nextarg ) ) {
+			$argument = "$nextarg=$argument";
+			warn "$name: DEBUG: Restoring argument '$argument' ...\n" if DEBUG;
+			$nextarg = undef;
+		}
+
+		if( $argument =~ m/^--to=?/ ) {
+			if( $argument eq '--to' ) {
+				$nextarg = $argument;
+			} else {
+				$account = $argument;
+				$account =~ s/^.*--to=//;
+				warn "$name: DEBUG: Sending tweet to account '$account' ...\n" if DEBUG;
 			}
-		} elsif( $argument =~ m/--eventtype=/ ) {
-			$argument =~ s/^.*--eventtype=//;
-			$haseventtype = 1;
-			$message = "${origin}: ${argument} -${message}";
+
+		} elsif( $argument =~ m/^--host=?/ ) {
+			if( $argument eq '--host' ) {
+				$nextarg = $argument;
+			} else {
+				$origin = $argument;
+				$origin =~ s/^.*--host=//;
+				warn "$name: DEBUG: Using host/prefix '$origin' ...\n" if DEBUG;
+			}
+
+		} elsif( $argument =~ m/^--type=?/ ) {
+			if( $argument eq '--type' ) {
+				$nextarg = $argument;
+			} else {
+				$type = $argument;
+				$type =~ s/^.*--type=//;
+				if( not( ( $type eq 'direct' ) or ( $type eq 'update' ) ) ) {
+					die( "$name: FATAL: Invalid post type '$type' - supported values are 'direct' and 'update'\n" );
+				}
+				warn "$name: DEBUG: Sending tweet of type '$type' ...\n" if DEBUG;
+			}
+
+		} elsif( $argument =~ m/--eventtype=?/ ) {
+			if( $argument eq '--eventtype' ) {
+				$nextarg = $argument;
+			} else {
+				$argument =~ s/^.*--eventtype=//;
+				$haseventtype = 1;
+				$message = "${origin}: ${argument} -${message}";
+				warn "$name: DEBUG: Found event type '$argument' for message: unfiltered text is now '$message'.\n" if DEBUG;
+			}
+
 		} else {
-			$message .= " " . $argument;
+			if( $message and length( $message ) ) {
+				$message .= " " . $argument;
+			} else {
+				$message = $argument;
+			}
 			$haseventtype = undef;
+			warn "$name: DEBUG: Found no event type for message: unfiltered text is now '$message'.\n" if DEBUG;
 		}
 	}
 	# Filter tab characters...
 	$message =~ s/\s+/ /g;
 	$message =~ s/^ //;
 	$message =~ s/ -$// if( $haseventtype );
+	warn "$name: DEBUG: Filtered message is '$message'.\n" if DEBUG;
 
 	my $response;
 	if( $type eq "direct" ) {
-		die( "$0: FATAL: No account specified for DM in config file or on command-line\n" ) unless( defined( $account ) and length( $account ) );
+		die( "$name: FATAL: No account specified for DM in config file or on command-line\n" ) unless( defined( $account ) and length( $account ) );
+		die( "$name: FATAL: Invalid account '$account' specified for DM in config file or on command-line\n" ) if( $account =~ m/^<.*>$/ );
 
-		print "$0: Sending message '$message' to account '$account'\n";
+		print "$name: INFO:  " . ( SIMULATE ? 'Simulating s' : 'S' ) . "ending message '$message' to account '$account'\n";
 		eval {
 			$response = $twitter -> new_direct_message( { screen_name => $account, text => $message } );
-		};
+		} if( not( SIMULATE ) );
 	} else {
-		warn "$0: Unknown message type '$type'\n" if $type ne "update";
-		print "$0: Sending update '$message'\n";
+		warn "$name: WARN:  Unknown message type '$type' - sending as 'update' ...\n" if $type ne "update";
+		print "$name: INFO:  " . ( SIMULATE ? 'Simulating s' : 'S' ) . "ending update '$message'\n";
 		eval {
 			$response = $twitter -> update( { status => $message } );
-		};
+		} if( not( SIMULATE ) );
 	}
-	print Data::Dumper -> Dump( [ $response ], [ qw( *response ) ] ) if( $ENV -> { 'DEBUG' } );
-	handle_errors( $@ );
+	if( not( SIMULATE ) ) {
+		print Data::Dumper -> Dump( [ $response ], [ qw( *response ) ] ) if( $ENV -> { 'DEBUG' } );
+		handle_errors( $@ );
+	}
 } # main
 
 main();
