@@ -41,9 +41,11 @@ sub handle_errors( $ ) {
 			$message = $error -> error();
 		};
 		if( $code eq 502 ) {
-			$message = "Twitter internal error: " . $code . ( defined $error ? " - " . $error -> error() : '' );
+			$message = "Twitter internal error: " . $code . ( defined $message ? " - " . $message : '' );
 		} elsif( $code eq 401 ) {
-			$message = "Application not authorised: " . $code . ( defined $error ? " - " . $error -> error() : '' );
+			$message = "Application not authorised: " . $code . ( defined $message ? " - " . $message : '' );
+		} elsif( $code eq 403 ) {
+			$message = "Rate limited " . $code . ( defined $message ? " - " . $message : '' );
 		} elsif( $code eq 200 ) {
 			return( $code );
 		}
